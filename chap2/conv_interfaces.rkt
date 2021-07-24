@@ -11,11 +11,14 @@
                (filter predicate (cdr sequence))))
         (else (filter predicate (cdr sequence)))))
 
-(define (accumulate op initial sequence)
+(define (accumulate op initial sequence) ; synonym fold-right
   (if (null? sequence)
       initial
       (op (car sequence)
           (accumulate op initial (cdr sequence)))))
+
+(define (map p sequence)
+  (accumulate (lambda (x y) (cons (p x) y)) nil sequence))
 
 
 (define (enumerate-interval low high)
@@ -28,6 +31,26 @@
         ((not (pair? tree)) (list tree))
         (else (append (enumerate-tree (car tree))
                       (enumerate-tree (cdr tree))))))
+
+; -------------------------------------------
+
+; Folds
+
+#|
+for fold-right and fold-left to be equal
+op should statisfy commutative property.
+eg +,*
+|#
+
+(define (fold-left op initial sequence)
+  (define (iter result rest)
+    (if (null? rest)
+      result
+      (iter (op result (car rest))
+            (cdr rest))))
+  (iter initial sequence))
+
+(define fold-right accumulate)
 
 ; -------------------------------------------
 
@@ -91,13 +114,53 @@ I never even thought that procedures like map and append can be formulated using
 
 
 (define (count-leaves t)
-  (accumulate +
-              0
-              (map (lambda (x)
+  (accumulate + 0 (map (lambda (x)
                      (if (not (pair? x))
                        1
                       (count-leaves x))) t)))
 
-(count-leaves (list 1 (list (list 2 3) 5 6)))
+(define (accumulate-n op init seqs)
+  (if (null? (car seqs))
+    nil
+    (cons (accumulate op init (map car seqs))
+          (accumulate-n op init (map cdr seqs))
+          )))
 
+; -------------------------------------------
 
+; Matrix operations
+#|
+
+|#
+
+(define m1 (list
+             (list 1 2 3 4)
+             (list 5 6 7 8)
+             (list 9 10 11 12))) ; test matrix
+
+(define v1 (list 1 2 3 4)) ; test vector
+
+(define (dot-product v w)
+  (accumulate + 0 (accumulate-n * 1 (list v w))))
+
+(define (matrix-*-vector m v)
+  (map (lambda (x) (dot-product x v)) m))
+
+(define (transpose m)
+  (accumulate-n cons nil m))
+
+(define (matrix-*-matrix mx my)
+  (if (not (pair? mx))
+    nil
+    (cons (matrix-*-vector my (car mx)) (matrix-*-matrix (cdr mx) my))))
+
+; -------------------------------------------
+; procedures that are formulated with the help of folds
+
+(define (reverseR sequence)
+  (fold-right (lambda (x y)
+                (append y (list x))) nil sequence))
+
+(define (reverseL sequence)
+  (fold-left (lambda (x y)
+               (append (list y) x)) nil sequence))
