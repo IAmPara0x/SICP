@@ -14,5 +14,6 @@ def triplets(n):
     for j in range(1,n+1):
       for k in range(1,n+1):
         print(i,j,k)
+
 triplets(3)
 

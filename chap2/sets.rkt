@@ -46,14 +46,78 @@
         ((< x (car set)) #f)
         (else (element-of-Oset? x (cdr set)))))
 
-(define (intersection-set set1 set2)
+(define (intersection-Oset set1 set2)
   (if (or (null? set1) (null? set2))
     '()
     (let ((x1 (car set1)) (x2 (car set2)))
       (cond ((= x1 x2)
-        (cons x1 (intersection-set (cdr set1)
+        (cons x1 (intersection-Oset (cdr set1)
                                    (cdr set2))))
         ((< x1 x2)
-          (intersection-set (cdr set1) set2))
+          (intersection-Oset (cdr set1) set2))
         ((< x2 x1)
-          (intersection-set set1 (cdr set2)))))))
+          (intersection-Oset set1 (cdr set2)))))))
+
+
+; -------------------------------------------
+#|
+  binary tree representation of sets
+|#
+
+(define entry car)
+(define left-branch cadr)
+(define right-branch caddr)
+(define (make-tree entry left right)
+  (list entry left right))
+
+(define (element-of-Tset? x set)
+  (cond
+    ((null? set) false)
+    ((= x (entry set)) #t)
+    ((< x (entry set))
+     (element-of-Tset? x (left-branch set)))
+    ((> x (entry set))
+     (element-of-Tset? x (right-branch set)))))
+
+(define (adjoin-Tset x set)
+  (cond
+    ((null? set) (make-tree x nil nil))
+    ((= x (entry)) set)
+    ((< x (entry))
+      (make-tree (entry x)
+                 (adjoin-Tset x (left-branch set))
+                 (right-branch set)))
+    ((> x (entry))
+      (make-tree (entry x)
+                 (left-branch set)
+                 (adjoin-Tset x (right-branch set))))))
+
+
+(define (tree->list-1 tree)
+  (if (null? tree)
+    '()
+    (append (tree->list-1 (left-branch tree))
+      (cons (entry tree)
+        (tree->list-1
+          (right-branch tree))))))
+
+
+(define (tree->list-2 tree)
+  (define (copy-to-list tree result-list)
+    (if (null? tree)
+      result-list
+        (copy-to-list (left-branch tree)
+                      (cons (entry tree)
+                            (copy-to-list
+                              (right-branch tree)
+                              result-list))
+                      )
+      ))
+  (copy-to-list tree '()))
+
+(define (e-tree x)
+  (make-tree x nil nil))
+
+(define set1
+  (make-tree 3 (e-tree 1) (make-tree 7 (e-tree 5) (make-tree 9 nil (e-tree 11)))))
+

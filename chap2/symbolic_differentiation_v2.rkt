@@ -65,17 +65,21 @@ Algorithm
     we terminate
 |#
 
+(define 1st-elem car)
+(define op cadr)
+(define 2nd-elem caddr)
+(define 2nd-op cadddr)
 
 (define (precedence-table exp)
   (cond
     ((eq? '+ exp) 0)
     ((eq? '* exp) 1)))
 
-(define (precedence-check op exp)
-  (op (precedence-table (cadr exp)) (precedence-table (cadddr exp))))
+(define (precedence-check cmp exp)
+  (cmp (precedence-table (op exp)) (precedence-table (2nd-op exp))))
 
 (define (exp-f exp f)
-  (list (f (car exp)) (cadr exp) (f (caddr exp))))
+  (list (f (1st-elem exp)) (op exp) (f (2nd-elem exp))))
 
 (define (precedence-sort exp)
   (cond
@@ -88,7 +92,7 @@ Algorithm
       (precedence-sort (cons (exp-f exp precedence-sort) (cdddr exp))))
 
     ((precedence-check < exp)
-     (append (list (precedence-sort (car exp)) (cadr exp))
+     (append (list (precedence-sort (1st-elem exp)) (op exp))
              (list (precedence-sort (cddr exp)))))
 
     ((precedence-check = exp)
@@ -109,5 +113,7 @@ Algorithm
 
     (else (error "unknow expression."))))
 
+(define (derivV2 exp var) (deriv (precedence-sort exp) var))
 
-(precedence-sort '(x * y + z * k + i + j))
+(precedence-sort '(x * y + z * ( m * n + q)))
+
