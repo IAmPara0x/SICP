@@ -64,12 +64,13 @@
   (define (view)
     (string-append "[View] Current Balance: " (number->string balance)))
 
-  (define (dispatch pass m)
+  (define (dispatch pass arg-or-symbol)
     (if (eq? password pass)
-        (cond ((eq? m 'deposit) deposit)
-              ((eq? m 'withdraw) withdraw)
-              ((eq? m 'view) view))
+        (cond ((eq? arg-or-symbol 'deposit) deposit)
+              ((eq? arg-or-symbol 'withdraw) withdraw)
+              ((eq? arg-or-symbol 'view) view))
         (lambda (_) "incorrect password.")))
   dispatch)
 
 (define acc (make-account 100 'secrect-pass))
+
