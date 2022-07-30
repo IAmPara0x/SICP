@@ -70,4 +70,3 @@
       (begin (set! tmp (* n new-n))
              (set! n new-n)
             tmp))))
-
