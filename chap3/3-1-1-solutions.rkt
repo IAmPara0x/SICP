@@ -73,4 +73,5 @@
   dispatch)
 
 (define acc (make-account 100 'secrect-pass))
-
+(check-equal? ((acc 'secrect-pass 'withdraw) 10) "Withdrawn amount: 10, remaining amount: 90")
+(check-equal? ((acc 'secrect-pa 'withdraw) 10) "incorrect password.")
