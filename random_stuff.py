@@ -17,3 +17,14 @@ def triplets(n):
 
 triplets(3)
 
+def last_elem(x):
+  if x[1:] == []:
+    return x
+  else:
+    return last_elem(x[1:])
+
+x = [1,2,3,4]
+y = [5,6]
+
+def append_list(x,y):
+  return x + y
