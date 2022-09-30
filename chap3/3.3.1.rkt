@@ -19,7 +19,6 @@
 (define (append! x y)
   (begin (set-cdr! (last-elem x) y) x))
 
-
 (append! x y)
 (check-equal? x (list (list 1 2) 3 4 5 6))
 
@@ -59,7 +58,7 @@
 
   (loop x '()))
 
-;; check if a lists contains a cycle.
+;; 3.19 check if a lists contains a cycle.
 (define (contains-cycle? x)
 
   (define (check x y n)

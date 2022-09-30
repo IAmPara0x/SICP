@@ -12,3 +12,12 @@
           ((eq? m 'odd) is-odd?)
           (else (error "Not a valid message."))))
   dispatch)
+
+(define (cons/new x y)
+  (define (dispatch m)
+    (cond ((eq? m 'car) x)
+          ((eq? m 'cdr) y)
+          (else (error "Undefined symbol"))
+          ))
+  dispatch)
+
