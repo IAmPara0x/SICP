@@ -1,7 +1,5 @@
 #lang sicp
 
-;; NOTE: This is temporary.
-
 (define (make-mutex)
   (let ((cell (list false)))
     (define (the-mutex m)
