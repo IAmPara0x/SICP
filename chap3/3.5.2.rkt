@@ -34,12 +34,16 @@
       (stream-car stream)
       (stream-ref (stream-cdr stream) (- n 1))))
 
-(define (stream-map proc stream)
-  (if (stream-null? stream)
-      the-empty-stream
-      (cons-stream
-         (proc (stream-car stream))
-         (stream-map proc (stream-cdr stream)))))
+(define (any pred? xs)
+  (cond [(null? xs) #f]
+        [(pred? (car xs)) #t]
+        [else (any pred? (cdr xs))]))
+
+(define [stream-map proc . streams]
+  (if (any stream-null? streams)
+      empty-stream
+      (cons-stream (apply proc (map stream-car streams))
+                   (apply stream-map (cons proc (map stream-cdr streams))))))
 
 (define (stream-filter pred? stream)
   (cond ((stream-null? stream) the-empty-stream)
@@ -64,8 +68,8 @@
    (stream-filter (lambda (x) (divisible? x 7))
                    integers))
 
-(define (fibgen a b) (cons-stream a (fibgen b (+ a b))))
-(define fibs (fibgen 0 1))
+;; (define (fibgen a b) (cons-stream a (fibgen b (+ a b))))
+;; (define fibs (fibgen 0 1))
 
 (define (seive-stream stream)
   (let ((prime (stream-car stream))
@@ -81,3 +85,19 @@
 (define ones (cons-stream 1 ones))
 ;; (cons '1 (memo-proc (lambda () ones)))>
 
+
+(define counter 0) 
+
+(define [1+ x] (+ x 1))
+
+(define (add-streams stream1 stream2) 
+    (stream-map 
+        (lambda (a b) 
+            (begin 
+                (set! counter (1+ counter)) 
+                (+ a b))) 
+        stream1 
+        stream2)) 
+  
+
+(define fibs (cons-stream 0 (cons-stream 1 (add-streams fibs (stream-cdr fibs)))))

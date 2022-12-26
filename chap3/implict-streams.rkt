@@ -6,15 +6,15 @@
   (syntax-rules ()
     ((_ exp) (memo-proc (lambda () exp)))))
 
-(define (memo-proc exp)
-  (lambda ()
+(define [memo-proc exp]
     (let ([already-run? #f] [result #f])
-      (if already-run?
-          result
-          (begin
-            (set! already-run? #t)
-            (set! result (exp))))
-      result)))
+      (lambda []
+        (if already-run?
+            result
+            (begin
+                (set! already-run? #t)
+                (set! result (exp))))
+        result)))
 
 (define-syntax cons-stream
   (syntax-rules ()
@@ -35,6 +35,11 @@
       (cons (stream-car stream)
             (stream-take! (- n 1) (stream-cdr stream)))))
 
+(define (stream-ref stream n)
+  (if (= n 0)
+      (stream-car stream)
+      (stream-ref (stream-cdr stream) (- n 1))))
+
 (define (any pred? xs)
   (cond [(null? xs) #f]
         [(pred? (car xs)) #t]
@@ -45,6 +50,12 @@
       empty-stream
       (cons-stream (apply proc (map stream-car streams))
                    (apply stream-map (cons proc (map stream-cdr streams))))))
+
+(define [stream-filter pred? stream]
+  (cond [(stream-null? stream) empty-stream]
+        [(pred? (stream-car stream)) (cons-stream (stream-car stream)
+                                                  (stream-filter pred? (stream-cdr stream)))]
+        [else (stream-filter pred? (stream-cdr stream))]))
 
 ;; -------------
 
@@ -77,31 +88,102 @@
           [(= div num) 0]
           [else (r (remainder? (- abs-div abs-num) abs-num))])))
 
-
 (define [xbonacci . sig]
 
-(define [to-stream xs]
-    (if (null? xs)
-        empty-stream
-        (cons-stream (car xs) (to-stream (cdr xs)))))
+    (define [to-stream xs]
+        (if (null? xs)
+            empty-stream
+            (cons-stream (car xs) (to-stream (cdr xs)))))
 
-(define [snoc-stream ys xs]
-  (if (stream-null? xs)
-      (force ys)
-      (cons-stream (stream-car xs) (snoc-stream ys (stream-cdr xs)))))
+    (define [snoc-stream ys xs]
+    (if (stream-null? xs)
+        (force ys)
+        (cons-stream (stream-car xs) (snoc-stream ys (stream-cdr xs)))))
 
-  (define [dropwhile n xs]
-    (if (= n 0)
-        (cons (stream-cdr xs) '())
-        (cons (stream-cdr xs) (dropwhile (- n 1) (stream-cdr xs)))))
+    (define [dropwhile n xs]
+        (if (= n 0)
+            (cons (stream-cdr xs) '())
+            (cons (stream-cdr xs) (dropwhile (- n 1) (stream-cdr xs)))))
 
-  (define n (- (length sig) 2))
+    (define n (- (length sig) 2))
 
-  (define gen
+    (define gen
     (snoc-stream (delay (apply stream-map (cons + (cons gen (dropwhile n gen)))))
-                 (to-stream sig)))
+                    (to-stream sig)))
 
   gen)
 
 (define fibs (xbonacci 0 1))
 (define tribonnaci (xbonacci 1 1 1))
+(define quadrobonnaci (xbonacci 1 1 1 1))
+
+(define (integers-starting-from n)
+  (cons-stream n (integers-starting-from (+ n 1))))
+
+(define primes
+  (cons-stream
+   2
+   (stream-filter prime? (integers-starting-from 3))))
+
+(define [prime? n]
+  (define [iter ps]
+    (cond [(> (sqr (stream-car ps)) n) #t]
+          [(= (remainder n (stream-car ps)) 0) #f]
+          [else (iter (stream-cdr ps))]))
+  (iter primes))
+
+#|
+ Ex 3.53
+=> The resultant stream is a stream with power of 2s.
+|#
+
+
+#|
+ Ex 3.54
+
+=> Make a stream of factorials.
+|#
+
+(define [mul-streams s1 s2] (stream-map * s1 s2))
+
+(define factorials
+  (cons-stream 1
+               (mul-streams factorials
+                            (stream-cdr integers))))
+
+
+#|
+Ex: 3.55
+
+|#
+
+(define [partial-sums stream]
+
+  (let ([x (stream-car stream)]
+        [xs (stream-cdr stream)]
+        )
+  (cons-stream x
+               (stream-map (λ[n] (+ n x)) (partial-sums xs)))))
+
+(define natsum (partial-sums integers))
+
+
+#|
+Ex: 3.56
+|#
+
+(define [merge s1 s2]
+
+  (cond
+    [(stream-null? s1) s2]
+    [(stream-null? s2) s1]
+    [(< (stream-car s1) (stream-car s2)) (cons-stream (stream-car s1)
+                                                      (merge (stream-cdr s1) s2))]
+    [(> (stream-car s1) (stream-car s2)) (cons-stream (stream-car s2)
+                                                      (merge s1 (stream-cdr s2)))]
+    [else (cons-stream (stream-car s1)
+                       (merge (stream-cdr s1) (stream-cdr s2)))]))
+
+(define S (cons-stream 1
+                       (merge (merge (scale-stream 2 S) (scale-stream 3 S))
+                              (scale-stream 5 S))))
