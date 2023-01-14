@@ -1,3 +1,4 @@
+#lang racket
 
 ; -------------------------------------------
 
@@ -5,6 +6,8 @@
 Representing complex numbers with different type of data abstractions.
 But using same procedures to compute arithmetic of complex numbers regarless of data abstractions.
 |#
+
+(define [square x] (* x x))
 
 ; Rectangular representation of complex numbers
 (define (real-part-rectangular z) (car z))

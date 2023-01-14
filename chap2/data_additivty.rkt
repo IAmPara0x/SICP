@@ -1,3 +1,4 @@
+#lang racket
 
 ; Data-directed programming
 
@@ -123,6 +124,3 @@
 (install-deriv-product)
 
 (define (derivV2 exp var) (deriv (precedence-sort exp) var))
-
-
-(derivV2 '(x * x) 'x)

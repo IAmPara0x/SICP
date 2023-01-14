@@ -156,9 +156,9 @@ evaluate the thunk
 (define [integer-starting-from n]
   (cons-stream n (integer-starting-from (+ n 1))))
 
+(define [divides? x y] (= (remainder x y) 0))
 (define [is-prime? primes n]
 
-  (define [divides? x y] (= (remainder x y) 0))
   (define [square x] (* x x))
 
   (let ([p (stream-car primes)])
@@ -271,4 +271,23 @@ Ex: 3.67
                     (pairs (stream-cdr s) (stream-cdr t)))))
 
 (define 3.70.a (weighted-pairs (λ [p] (apply + p)) integers integers))
+(define 3.70.b (weighted-pairs (λ [p] (let ([i (car p)] [j (cadr p)])
+                                        (+ (* 2 i) (* 3 j) (* 5 i j))))
+                  integers integers))
 
+
+(define [add-stream . streams] (apply stream-map (cons + streams)))
+(define [scale-stream n stream] (stream-map (λ [x] (* x n)) stream))
+
+(define [integral integrand initial-value dt]
+  (define int
+    (cons-stream initial-value
+                 (add-stream (scale-stream dt integrand)
+                             int)))
+  int)
+
+(define [stream-withdraw balance amount-stream]
+  (cons-stream
+   balance
+   (stream-withdraw (- balance (stream-car amount-stream))
+                    (stream-cdr amount-stream))))
