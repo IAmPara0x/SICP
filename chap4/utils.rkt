@@ -45,3 +45,7 @@
         [else (cons (cons (car xs) (car ys))
                     (zip (cdr xs) (cdr ys)))]))
 
+(provide invalid-msg)
+(define-syntax invalid-msg
+  (syntax-rules ()
+    ([_ n m] (error (~a "Not a valid message:") (symbol->string (quote n)) m))))
