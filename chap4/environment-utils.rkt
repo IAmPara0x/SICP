@@ -2,6 +2,8 @@
 
 (require "utils.rkt")
 
+(provide undefined-value)
+(define undefined-value '*unassigned*)
 
 (provide make-frame)
 (define [make-frame variables values]  (make-hash (zip variables values)))
@@ -39,7 +41,10 @@
   (cond [(eq? env the-empty-environment)
          (error "Unbound variable " var)]
         [(hash-has-key? (first-frame env) var)
-         (hash-ref (first-frame env) var)]
+         (if [eq? (hash-ref (first-frame env) var) undefined-value]
+             (error (~a "Trying to use " var " but it's value is undefined."))
+             (hash-ref (first-frame env) var))
+         ]
         [else
          (lookup-variable-value var (enclosing-environment env))]))
 

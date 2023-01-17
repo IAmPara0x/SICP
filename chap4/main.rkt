@@ -15,3 +15,20 @@
   (driver-loop))
 
 [driver-loop]
+
+#|
+
+(define [solve f y0 dt]
+  (define y (integral (delay dy) y0 dt))
+  (define dy (stream-map f y))
+y)
+
+(λ [f y0 dt]
+  (let ([y undefined])
+  )
+)
+
+;; (define )
+|#
+
+

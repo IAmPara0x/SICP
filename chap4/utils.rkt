@@ -49,3 +49,22 @@
 (define-syntax invalid-msg
   (syntax-rules ()
     ([_ n m] (error (~a "Not a valid message:") (symbol->string (quote n)) m))))
+
+
+(provide seperate)
+(define [seperate f xs]
+  (if [null? xs]
+      (list null null)
+      (let ([r (seperate f (cdr xs))]
+            [x (car xs)])
+        (if [f x]
+            (list (cons x (car r))
+                  (cadr r))
+            (list (car r)
+                  (cons x (cadr r)))))))
+
+(provide dispatch)
+(define-syntax dispatch
+  (syntax-rules ()
+    ([_ p dispatcher] (define p (dispatcher (quote p))))))
+

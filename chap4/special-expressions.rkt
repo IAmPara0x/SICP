@@ -14,7 +14,6 @@
 ;;               rest-op))))
 
 
-
 (define [true? x] (not (false? x)))
 (define [false? x] (eq? x #f))
 (define [make-procedure parameters body env]
@@ -31,6 +30,7 @@
   (define [self-evaluating? exp]
     (cond [(number? exp) #t]
           [(string? exp) #t]
+          [(eq? exp undefined-value) #t]
           [else #f]))
 
   (define [dispatch m]
@@ -43,7 +43,10 @@
 [install-exp 'atomic self-evaluating-exp-dispatcher]
 
 (define [variable-name-exp]
-  (define variable? symbol?)
+
+  (define [variable? exp]
+    (and (not (eq? exp undefined-value))
+         (symbol? exp)))
 
   (define [dispatch m]
     (cond [(eq? m 'variable?) variable?]
@@ -88,6 +91,9 @@
           [else (invalid-msg assignment-exp m)]))
   dispatch)
 
+(define [make-assignment exp val]
+  (list 'set! exp val))
+
 (define assignment-exp-dispatcher [assignment-exp])
 [install-exp 'compound assignment-exp-dispatcher]
 
@@ -106,7 +112,7 @@
   (define [definition-value exp]
     (if [(->> symbol? cadr) exp]
         (caddr exp)
-        (make-lambda ((cdadr) exp)
+        (make-lambda (cdadr exp)
                      (cddr exp))))
 
   (define [eval-definition exp env]
@@ -114,13 +120,24 @@
       (eval (definition-value exp) env)
                         env)
     'ok)
+  
+  (define [definition? exp]
+    (tagged-list? exp 'define ))
+
   (define [dispatch m]
     (cond [(eq? m 'tag) 'define]
+          [(eq? m 'definition?) definition?]
+          [(eq? m 'definition-variable) definition-variable]
+          [(eq? m 'definition-value) definition-value]
           [(eq? m 'evaluator) eval-definition]
           [else (invalid-msg definition-exp m)]))
   dispatch)
 
 (define definition-exp-dispatcher [definition-exp])
+(dispatch definition? definition-exp-dispatcher)
+(dispatch definition-variable definition-exp-dispatcher)
+(dispatch definition-value definition-exp-dispatcher)
+
 [install-exp 'compound definition-exp-dispatcher]
 
 #|
@@ -132,12 +149,25 @@ Lambdas
   (define lambda-parameters cadr)
   (define lambda-body cddr)
 
-
   (define [eval-lambda exp env]
-    (make-procedure (lambda-parameters exp)
-                    (cons 'begin (lambda-body exp))
-                    env))
+    (let* ([result (seperate definition? (lambda-body exp))]
+           [definitions (car result)]
+           [expressions (cadr result)]
+           [to->letvar (λ [d] (list (definition-variable d) undefined-value))]
+           [to->set! (λ [d] (make-assignment (definition-variable d) (definition-value d)))]
+           )
 
+      (if [null? definitions]
+          (make-procedure (lambda-parameters exp)
+                          (cons 'begin (lambda-body exp))
+                          env)
+
+          (make-procedure (lambda-parameters exp)
+                          (make-let (map to->letvar definitions)
+                                    (append (map to->set! definitions) expressions))
+                          env)
+          )
+      ))
   (define [dispatch m]
     (cond [(eq? m 'tag) 'lambda]
           [(eq? m 'evaluator) eval-lambda]
@@ -316,9 +346,9 @@ Lambdas
 
   (define [eval-and exp env]
     (let ([exps (and-exps exp)])
-      (cond [(null? exps) 'true]
+      (cond [(null? exps) 'True]
             [else
-             (make-if (car exps) (cons 'and (cdr exps)) 'false)])))
+             (eval (make-if (car exps) (cons 'and (cdr exps)) 'False) env)])))
 
   (define [dispatch m]
     (cond [(eq? m 'tag) 'and]
@@ -335,9 +365,9 @@ Lambdas
 
   (define [eval-or exp env]
     (let ([exps (or-exps exp)])
-      (cond [(null? exps) 'false]
+      (cond [(null? exps) 'False]
             [else
-             (make-if (car exps) 'true (cons 'or (cdr exps)) )])))
+             (eval (make-if (car exps) 'True (cons 'or (cdr exps))) env)])))
 
   (define [dispatch m]
     (cond [(eq? m 'tag) 'or]
@@ -372,6 +402,10 @@ Lambdas
 (define let-exp-dispatcher [let-exp])
 [install-exp 'compound let-exp-dispatcher]
 
+(define [make-let vars exps]
+  (cons 'let (cons vars exps)))
+
+;; TODO Add derived expression to the interpretor for loops like "unless" and "for"
 
 (define primitives
   (list
@@ -385,7 +419,6 @@ Lambdas
    (cons '+ +)
    (cons '- -)
    (cons '= =)
-   (cons 'eq? eq?)
    (cons 'True true)
    (cons 'False false)
    ))

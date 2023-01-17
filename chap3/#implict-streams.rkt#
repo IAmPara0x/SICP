@@ -1,0 +1,220 @@
+#lang racket
+
+
+(define (force exp) (exp))
+
+(define-syntax delay
+  (syntax-rules ()
+    ((_ exp) (memo-proc (lambda () exp)))))
+
+(define (memo-proc exp)
+  lambda ())
+
+(define-syntax cons-stream
+  (syntax-rules ()
+    ((_ x xs) (cons x (delay xs)))))
+
+(define (stream-car stream) (car stream))
+(define (stream-cdr stream) (force (cdr stream)))
+
+(define stream-null? null?)
+
+(define empty-stream '())
+
+;; Utility functions
+
+(define (stream-take! n stream)
+  (if (= n 0)
+      empty-stream
+      (cons (stream-car stream)
+            (stream-take! (- n 1) (stream-cdr stream)))))
+
+(define (stream-ref stream n)
+  (if (= n 0)
+      (stream-car stream)
+      (stream-ref (stream-cdr stream) (- n 1))))
+
+(define (any pred? xs)
+  (cond [(null? xs) #f]
+        [(pred? (car xs)) #t]
+        [else (any pred? (cdr xs))]))
+
+(define [stream-map proc . streams]
+  (if (any stream-null? streams)
+      empty-stream
+      (cons-stream (apply proc (map stream-car streams))
+                   (apply stream-map (cons proc (map stream-cdr streams))))))
+
+(define [stream-filter pred? stream]
+  (cond [(stream-null? stream) empty-stream]
+        [(pred? (stream-car stream)) (cons-stream (stream-car stream)
+                                                  (stream-filter pred? (stream-cdr stream)))]
+        [else (stream-filter pred? (stream-cdr stream))]
+    )
+  )
+
+;; -------------
+
+(define ones (cons-stream 1 ones))
+
+(define [add-stream s1 s2] (stream-map + s1 s2))
+
+(define integers
+  (cons-stream 1 (add-stream ones integers)))
+
+(define [scale-stream factor stream]
+  (stream-map (λ [x] (* x factor)) stream))
+
+(define [signum n]
+  (if (< n 0) -1 1))
+
+(define [assert exp msg]
+  (if exp #t (error msg)))
+
+(define [remainder? div num]
+
+  (assert (not [= num 0]) "division by zero")
+
+  (let ([abs-div (abs div)]
+        [abs-num (abs num)])
+
+    (define [r n] (* (signum div) (signum num) n))
+
+    (cond [(< abs-div abs-num) (* abs-div (signum div) (signum num))]
+          [(= div num) 0]
+          [else (r (remainder? (- abs-div abs-num) abs-num))])))
+
+(define [xbonacci . sig]
+
+    (define [to-stream xs]
+        (if (null? xs)
+            empty-stream
+            (cons-stream (car xs) (to-stream (cdr xs)))))
+
+    (define [snoc-stream ys xs]
+    (if (stream-null? xs)
+        (force ys)
+        (cons-stream (stream-car xs) (snoc-stream ys (stream-cdr xs)))))
+
+    (define [dropwhile n xs]
+        (if (= n 0)
+            (cons (stream-cdr xs) '())
+            (cons (stream-cdr xs) (dropwhile (- n 1) (stream-cdr xs)))))
+
+    (define n (- (length sig) 2))
+
+    (define gen
+    (snoc-stream (delay (apply stream-map (cons + (cons gen (dropwhile n gen)))))
+                    (to-stream sig)))
+
+  gen)
+
+(define fibs (xbonacci 0 1))
+(define tribonnaci (xbonacci 1 1 1))
+(define quadrobonnaci (xbonacci 1 1 1 1))
+
+(define (integers-starting-from n)
+  (cons-stream n (integers-starting-from (+ n 1))))
+
+(define primes
+  (cons-stream
+   2
+   (stream-filter prime? (integers-starting-from 3))))
+
+(define [prime? n]
+  (define [iter ps]
+    (cond [(> (sqr (stream-car ps)) n) #t]
+          [(= (remainder n (stream-car ps)) 0) #f]
+          [else (iter (stream-cdr ps))]))
+  (iter primes))
+
+#|
+ Ex 3.53
+=> The resultant stream is a stream with power of 2s.
+|#
+
+
+#|
+ Ex 3.54
+
+=> Make a stream of factorials.
+|#
+
+(define [mul-streams s1 s2] (stream-map * s1 s2))
+
+(define factorials
+  (cons-stream 1
+               (mul-streams factorials
+                            (stream-cdr integers))))
+
+
+#|
+Ex: 3.55
+
+|#
+
+(define [partial-sums stream]
+
+  (let ([x (stream-car stream)]
+        [xs (stream-cdr stream)]
+        )
+  (cons-stream x
+               (stream-map (λ[n] (+ n x)) (partial-sums xs)))))
+
+(define natsum (partial-sums integers))
+
+
+#|
+Ex: 3.56
+|#
+
+(define [merge s1 s2]
+
+  (cond
+    [(stream-null? s1) s2]
+    [(stream-null? s2) s1]
+    [(< (stream-car s1) (stream-car s2)) (cons-stream (stream-car s1)
+                                                      (merge (stream-cdr s1) s2))]
+    [(> (stream-car s1) (stream-car s2)) (cons-stream (stream-car s2)
+                                                      (merge s1 (stream-cdr s2)))]
+    [else (cons-stream (stream-car s1)
+                       (merge (stream-cdr s1) (stream-cdr s2)))]))
+
+(define S (cons-stream 1
+                       (merge (merge (scale-stream 2 S) (scale-stream 3 S))
+                              (scale-stream 5 S))))
+
+#|
+Ex: 3.57
+
+(define [stream-map proc . streams]
+  (if (any stream-null? streams)
+      empty-stream
+      (cons-stream (apply proc (map stream-car streams))
+                   (apply stream-map (cons proc (map stream-cdr streams))))))
+
+(+ 0 1)
+(1 .. ) (2 ..)
+
+(cons-stream (+ 0 1) thunk)
+
+(stream-map 1 )
+
+1
+
+|#
+
+(define counter 0)
+(define [inc x] (+ x 1))
+ (define (add-streams stream1 stream2) 
+     (stream-map 
+         (lambda (a b) 
+             (begin 
+                 (set! counter (inc counter)) 
+                 (+ a b))) 
+         stream1 
+         stream2)) 
+
+(define fibs- (cons-stream 0
+                           (cons-stream 1
+                                        (add-streams fibs- (stream-cdr fibs-)))))
