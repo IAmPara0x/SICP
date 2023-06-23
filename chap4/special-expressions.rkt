@@ -13,9 +13,12 @@
 ;;         (cons (eval (first-operand exps) env) 
 ;;               rest-op))))
 
+(define TRUE 'True)
+(define FALSE 'False)
 
-(define [true? x] (not (false? x)))
-(define [false? x] (eq? x #f))
+(define [true? x] (eq? TRUE x))
+(define [false? x] (eq? FALSE x))
+
 (define [make-procedure parameters body env]
   (list 'procedure parameters body env))
 (define [compound-procedure? p] (tagged-list? p 'procedure))
@@ -30,13 +33,24 @@
   (define [self-evaluating? exp]
     (cond [(number? exp) #t]
           [(string? exp) #t]
+          [(null? exp) #t]
+          [(true? exp) #t]
+          [(false? exp) #t]
           [(eq? exp undefined-value) #t]
           [else #f]))
+
+  (define [analyze-self-evaluating-exp exp]
+    (if [self-evaluating? exp]
+        (λ [_env] exp)
+        (error "Not a self-evaluating expression: " exp))
+    )
 
   (define [dispatch m]
     (cond [(eq? m 'pred ) self-evaluating?]
           [(eq? m 'evaluator ) const]
+          [(eq? m 'analyzer ) analyze-self-evaluating-exp]
           [else (invalid-msg self-evaluating-exp m)]))
+
   dispatch)
 
 (define self-evaluating-exp-dispatcher [self-evaluating-exp])
@@ -46,28 +60,43 @@
 
   (define [variable? exp]
     (and (not (eq? exp undefined-value))
+         (not (eq? exp TRUE))
+         (not (eq? exp FALSE))
          (symbol? exp)))
 
+  (define [analyze-variable exp]
+    (if [variable? exp]
+        (λ [env] (lookup-variable-value exp env))
+        (error "Not a variable: " exp)))
+
   (define [dispatch m]
-    (cond [(eq? m 'variable?) variable?]
-          [(eq? m 'pred) variable?]
+    (cond [(eq? m 'pred) variable?]
           [(eq? m 'evaluator) lookup-variable-value]
+          [(eq? m 'analyzer) analyze-variable]
           [else (invalid-msg variable-name-exp m)]))
   dispatch)
 
 (define variable-name-exp-dispatcher [variable-name-exp])
-(define variable? (variable-name-exp-dispatcher 'variable?))
+(define variable? (variable-name-exp-dispatcher 'pred))
 [install-exp 'atomic variable-name-exp-dispatcher]
 
 ;; Quotation
 ;; (quote exp)
 (define [quoted-exp]
+
   (define [text-of-quotation exp env] (cadr exp))
 
-  (install-compound-exp-evaluator 'quote text-of-quotation)
+  (define [quote-expression? exp] (eq? 'quote (car exp)))
+
+  (define [analyze-quoted-exp exp]
+    (if [quote-expression? exp]
+        (λ [env] exp)
+        (error "Not a quote expression: " exp)))
+
   (define [dispatch m]
     (cond [(eq? m 'tag) 'quote]
           [(eq? m 'evaluator) text-of-quotation]
+          [(eq? m 'analyzer) analyze-quoted-exp]
           [else (invalid-msg quoted-exp m)]))
   dispatch)
 
@@ -85,9 +114,19 @@
                          (eval (assignment-value exp) env)
                          env)
     'ok)
+
+  (define [analyze-assignment exp]
+    (let ([name (assignment-variable exp)]
+          [value-proc (analyze (assignment-value exp))])
+
+      (λ [env] (set-variable-value! name
+                                    (value-proc env)
+                                    env))))
+
   (define [dispatch m]
     (cond [(eq? m 'tag) 'set!]
           [(eq? m 'evaluator) eval-assignment]
+          [(eq? m 'analyzer) analyze-assignment]
           [else (invalid-msg assignment-exp m)]))
   dispatch)
 
@@ -103,14 +142,13 @@
 ;; (define name value)
 (define [definition-exp]
 
-
   (define [definition-variable exp]
     (if [variable? (cadr exp)]
         (cadr exp)
         (caadr exp)))
 
   (define [definition-value exp]
-    (if [(->> symbol? cadr) exp]
+    (if [variable? (cadr exp)]
         (caddr exp)
         (make-lambda (cdadr exp)
                      (cddr exp))))
@@ -124,12 +162,18 @@
   (define [definition? exp]
     (tagged-list? exp 'define ))
 
+  (define [analyze-definition exp]
+    (let ([name (definition-variable exp)]
+          [value-proc (analyze (definition-value exp))])
+      (λ [env] (define-variable! name (value-proc env) env))))
+
   (define [dispatch m]
     (cond [(eq? m 'tag) 'define]
           [(eq? m 'definition?) definition?]
           [(eq? m 'definition-variable) definition-variable]
           [(eq? m 'definition-value) definition-value]
           [(eq? m 'evaluator) eval-definition]
+          [(eq? m 'analyzer) analyze-definition]
           [else (invalid-msg definition-exp m)]))
   dispatch)
 
@@ -142,7 +186,7 @@
 
 #|
 Lambdas
-(lambda [params] (body))
+(lambda [params] body)
 |#
 (define [lambda-exp]
 
@@ -165,12 +209,30 @@ Lambdas
           (make-procedure (lambda-parameters exp)
                           (make-let (map to->letvar definitions)
                                     (append (map to->set! definitions) expressions))
-                          env)
-          )
-      ))
+                          env))))
+
+  (define [analyze-lambda exp]
+    (let* ([params (lambda-parameters exp)]
+           [body-proc (lambda-body exp)]
+           [result (seperate definition? (lambda-body exp))]
+           [definitions (car result)]
+           [expressions (cadr result)]
+           [to->letvar (λ [d] (list (definition-variable d) undefined-value))]
+           [to->set! (λ [d] (make-assignment (definition-variable d) (definition-value d)))])
+
+      (if [null? definitions]
+          (λ [env] (make-procedure params
+                                   (analyze (cons 'begin body-proc))
+                                   env))
+          (λ [env] (make-procedure params
+                                   (analyze (make-let (map to->letvar definitions)
+                                                      (append (map to->set! definitions) expressions)))
+                                   env)))))
+
   (define [dispatch m]
     (cond [(eq? m 'tag) 'lambda]
           [(eq? m 'evaluator) eval-lambda]
+          [(eq? m 'analyzer) analyze-lambda]
           [else (invalid-msg lambda-exp m)]))
 
   dispatch)
@@ -192,8 +254,17 @@ Lambdas
         ((->> cadddr) exp)
         'false))
 
+  (define [analyze-if exp]
+    (let ([pred-proc (analyze (if-predicate exp))]
+          [consequent-proc (analyze (if-consequent exp))]
+          [alternative-proc (analyze (if-alternative exp))])
+
+      (λ [env]
+        (if (true? (pred-proc env))
+            (consequent-proc env)
+            (alternative-proc env)))))
+
   (define [eval-if exp env]
-    
     (if [true? (eval (if-predicate exp) env)]
         (eval (if-consequent exp) env)
         (eval (if-alternative exp) env)))
@@ -201,6 +272,7 @@ Lambdas
   (define [dispatch m]
     (cond [(eq? m 'tag) 'if]
           [(eq? m 'evaluator) eval-if]
+          [(eq? m 'analyzer) analyze-if]
           [else (invalid-msg if-exp m)]))
 
   dispatch)
@@ -214,10 +286,26 @@ Lambdas
 ;; (begin exp exp ...)
 (define [begin-exp]
 
-  (define begin-actions cdr)
   (define last-exp? (->> null? cdr))
   (define first-exp car)
   (define rest-exps cdr)
+
+
+  (define [analyze-begin exp]
+
+    (define [sequentially proc1 proc2]
+      (λ [env] (proc1 env) (proc2 env)))
+
+    (define [loop first-proc rest-procs]
+      (cond [(null? rest-procs) first-proc]
+            [else (loop (sequentially first-proc (car rest-procs))
+                        (cdr rest-procs))]))
+
+    (let ([procs (map analyze (cdr exp))])
+
+      (cond [(null? procs) (error "Empty begin")]
+            [else (loop (car procs) (cdr procs))])))
+
 
   (define [eval-sequence exps env]
     (cond [(last-exp? exps) (eval (first-exp exps) env)]
@@ -238,6 +326,7 @@ Lambdas
           [(eq? m 'eval-sequence) eval-sequence]
           [(eq? m 'tag) 'begin]
           [(eq? m 'evaluator) eval-begin]
+          [(eq? m 'analyzer) analyze-begin]
           [else (invalid-msg being-exp m)]))
 
   dispatch)
@@ -248,6 +337,7 @@ Lambdas
 (define eval-sequence (begin-exp-dispatcher 'eval-sequence))
 
 ;; Cond expression
+
 (define [cond-exp]
 
   (define [clause->if clause alt-action]
@@ -283,9 +373,14 @@ Lambdas
 
   (define [eval-cond exp env] (eval (cond->if exp) env))
 
+  (define [analyze-cond exp]
+    (let ([cond-proc (analyze (cond->if exp))])
+      (λ [env] (cond-proc env))))
+
   (define [dispatch m]
     (cond [(eq? m 'tag) 'cond]
           [(eq? m 'evaluator) eval-cond]
+          [(eq? m 'analyzer) analyze-cond]
           [else (invalid-msg cond-exp m)]))
   dispatch)
 
@@ -322,6 +417,33 @@ Lambdas
             (cons first-op
                 (list-of-values (rest-operands exps) env)))))
 
+  (define [list-of-procs exps]
+    (if [no-operands? exps]
+        '()
+        (let ([first-op (analyze (first-operand exps))])
+            (cons first-op
+                (list-of-procs (rest-operands exps))))))
+
+  (define [execute-application proc args]
+
+    (cond [(premitive-procedure? proc)
+           (apply-premitive-procedure proc args)]
+
+          [(compound-procedure? proc)
+           ((procedure-body proc)
+            (extend-environment (procedure-parameters proc)
+                                args
+                                (procedure-environment proc)))]
+
+          [else (error "Unknown procedure type: EXECUTE-APPLICATION " proc)]))
+
+  (define [analyze-application exp]
+    (let ([operator-proc (analyze (operator exp))]
+          [operand-procs (list-of-procs (operands exp))])
+
+      (λ [env] (execute-application (operator-proc env)
+                                    (map (λ [operand-proc] (operand-proc env)) operand-procs)))))
+
   (define [eval-application exp env]
     (apply (eval (operator exp) env)
            (list-of-values (operands exp) env)))
@@ -329,6 +451,7 @@ Lambdas
   (define [dispatch m]
     (cond [(eq? m 'tag) null]
           [(eq? m 'evaluator) eval-application]
+          [(eq? m 'analyzer) analyze-application]
           [else (invalid-msg application-exp m)]))
   dispatch)
 
@@ -346,32 +469,52 @@ Lambdas
 
   (define [eval-and exp env]
     (let ([exps (and-exps exp)])
-      (cond [(null? exps) 'True]
+      (cond [(null? exps) TRUE]
             [else
-             (eval (make-if (car exps) (cons 'and (cdr exps)) 'False) env)])))
+             (eval (make-if (car exps) (cons 'and (cdr exps)) FALSE) env)])))
+
+  (define [analyze-and exp]
+    (let ([exps (and-exps exp)])
+      (cond [(null? exps) (λ [_env] TRUE)]
+            [else
+             (λ [env] ((analyze (make-if (car exps)
+                                         (cons 'and (cdr exps))
+                                         FALSE
+                                        )) env))])))
 
   (define [dispatch m]
     (cond [(eq? m 'tag) 'and]
           [(eq? m 'evaluator) eval-and]
+          [(eq? m 'analyzer) analyze-and]
           [else (invalid-msg and-exp m)]))
   dispatch)
 
 (define and-exp-dispatcher [and-exp])
 [install-exp 'compound and-exp-dispatcher]
 
-(define [or-exp]
 
+(define [or-exp]
   (define or-exps cdr)
 
   (define [eval-or exp env]
     (let ([exps (or-exps exp)])
-      (cond [(null? exps) 'False]
+      (cond [(null? exps) FALSE]
             [else
-             (eval (make-if (car exps) 'True (cons 'or (cdr exps))) env)])))
+             (eval (make-if (car exps) TRUE (cons 'or (cdr exps))) env)])))
+
+  (define [analyze-or exp]
+    (let ([exps (or-exps exp)])
+
+      (cond [(null? exps) (λ [_env] FALSE)]
+            [else
+             (λ [env] ((analyze (make-if (car exps)
+                                         TRUE
+                                         (cons 'or (cdr exps)))) env))])))
 
   (define [dispatch m]
     (cond [(eq? m 'tag) 'or]
           [(eq? m 'evaluator) eval-or]
+          [(eq? m 'analyzer) analyze-or]
           [else (invalid-msg or-exp m)]))
   dispatch)
 
@@ -393,9 +536,14 @@ Lambdas
 
   (define [eval-let exp env] (eval (let->combination exp) env))
 
+  (define [analyze-let exp]
+    (let ([let-proc (analyze (let->combination exp))])
+      (λ [env] (let-proc env))))
+
   (define [dispatch m]
     (cond [(eq? m 'tag) 'let]
           [(eq? m 'evaluator) eval-let]
+          [(eq? m 'analyzer) analyze-let]
           [else (invalid-msg let-exp m)]))
   dispatch)
 
@@ -407,10 +555,104 @@ Lambdas
 
 ;; TODO Add derived expression to the interpretor for loops like "unless" and "for"
 
+(define [unless-exp]
+
+  (define unless-condition cadr)
+  (define unless-value caddr)
+  (define unless-exception cadddr)
+
+  (define [analyze-unless exp]
+    (let ([condition-proc (analyze (unless-condition exp))]
+          [value-proc (analyze (unless-value exp))]
+          [exception-proc (analyze (unless-exception exp))])
+
+      (λ [env]
+        (if [condition-proc env]
+            (exception-proc env) (value-proc env)))))
+
+  (define [eval-unless _exp _env]
+    (error "Not Implemented: eval for unless expression")
+    )
+
+  (define [dispatch m]
+    (cond [(eq? m 'tag) 'unless]
+          [(eq? m 'analyzer) analyze-unless]
+          [(eq? m 'evaluator) eval-unless]
+          [else (invalid-msg unless-exp m)]))
+
+  dispatch)
+
+
+(define unless-exp-dispatcher [unless-exp])
+[install-exp 'compound unless-exp-dispatcher]
+
+#|
+  SYNTAX: (letrec ([add-one (λ [x]  (+ x one))]
+                   [one 1])
+            (add-one 10))
+
+  Transfomation of letrec to let:
+
+            (let ([add-one undefined-value]
+                  [one undefined-value])
+
+                (set! add-one (λ [x]  (+ x one)))
+                (set! one 1)
+                (add-one 10))
+
+  letrec will be transformed to let expression where all the variables
+  defined in the letrec expression will have simultaneous scope i.e. they can refer to
+  each other while defining.
+|#
+
+(define [letrec-exp]
+
+  (define let-variables-list cadr)
+  (define variable-name car)
+  (define variable-exp cadr)
+
+  (define let-expressions-list cddr)
+
+  (define [letrec->let exp]
+
+    (let* ([variable-names (map variable-name (let-variables-list exp))]
+
+           [variable-expressions (map variable-exp (let-variables-list exp))]
+
+           [undefined-variables (map (λ [var-name] (list var-name undefined-value))
+                                     variable-names)]
+           [to->set! (λ [d] (cons 'set! d))]
+
+           [initialize-variables-value
+            (map to->set!
+                 (zip variable-names (map list variable-expressions)))])
+
+      (make-let undefined-variables
+                (append initialize-variables-value (let-expressions-list exp)))))
+
+  (define [eval-let-rec exp env]
+    (eval (letrec->let exp) env))
+
+  (define [analyze-letrec exp]
+    (let ([letrec-proc (analyze (letrec->let exp))])
+      (λ [env] (letrec-proc env))))
+
+  (define [dispatch m]
+    (cond [(eq? m 'tag) 'letrec]
+          [(eq? m 'evaluator) eval-let-rec]
+          [(eq? m 'analyzer) analyze-letrec]
+          [else (invalid-msg let-rec-exp m)]))
+
+  dispatch)
+
+(define letrec-exp-dispatcher [letrec-exp])
+[install-exp 'compound letrec-exp-dispatcher]
+
 (define primitives
   (list
    (cons 'print println)
    (cons 'list list)
+   (cons '== eq?)
    (cons 'null null)
    (cons 'cons cons)
    (cons 'car car)
@@ -419,8 +661,6 @@ Lambdas
    (cons '+ +)
    (cons '- -)
    (cons '= =)
-   (cons 'True true)
-   (cons 'False false)
    ))
 
 (provide primitive-frame)

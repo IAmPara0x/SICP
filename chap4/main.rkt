@@ -9,26 +9,17 @@
 (define [driver-loop]
   (display input-prompt)
   (let* ([input (read)]
-         [output (eval input base-env)])
+         [output ((analyze input) base-env)])
+    (println input)
     (display output-prompt)
-    (println output))
+    (println output)
+    )
   (driver-loop))
 
-[driver-loop]
+(define [newline? char] (eq? char #\newline))
 
-#|
-
-(define [solve f y0 dt]
-  (define y (integral (delay dy) y0 dt))
-  (define dy (stream-map f y))
-y)
-
-(λ [f y0 dt]
-  (let ([y undefined])
-  )
-)
-
-;; (define )
-|#
-
-
+(define [eval-file filename]
+  (let ([content (file->value filename)]
+        [start-time   (current-inexact-milliseconds)])
+    (println ((analyze content) base-env))
+    (println (/ (- (current-inexact-milliseconds) start-time) 1000))))
